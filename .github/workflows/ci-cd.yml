@@ -39,7 +39,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+      image: bokter/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
