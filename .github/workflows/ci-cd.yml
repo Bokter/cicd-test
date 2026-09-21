@@ -39,7 +39,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,29 +68,43 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # deploy:
-  #   name: Desplegar en Kubernetes
-  #   needs: build-and-push
-  #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main'
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #
-  #     # TODO: falta definir antes de habilitar este job:
-  #     #   1. Manifiestos de Kubernetes (deployment.yaml / service.yaml) o un chart de Helm en el repo.
-  #     #   2. Cómo autenticar contra el cluster: por ejemplo un secret KUBE_CONFIG
-  #     #      con el kubeconfig en base64, o las credenciales del proveedor cloud
-  #     #      (EKS/GKE/AKS) para obtener el contexto del cluster.
-  #
-  #     - name: Configurar kubeconfig
-  #       run: |
-  #         mkdir -p ~/.kube
-  #         echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
-  #
-  #     - name: Actualizar imagen del deployment
-  #       run: |
-  #         kubectl set image deployment/cicdtest \
-  #           cicdtest=${{ needs.build-and-push.outputs.image }} \
-  #           --record
-  #         kubectl rollout status deployment/cicdtest
+  deploy:
+    name: Desplegar (docker compose up)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Nota: esto corre en el runner efímero de GitHub Actions, no en un
+      # servidor persistente. Sirve como smoke test del contenedor recién
+      # publicado; el runner (y el contenedor) se destruyen al terminar el job.
+      - name: docker compose up
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+        run: docker compose up -d
+
+      - name: Verificar que el servicio responde
+        run: |
+          for i in $(seq 1 10); do
+            curl -sf "http://localhost:3000/m?a=2&b=3" && exit 0
+            sleep 1
+          done
+          echo "El servicio no respondió a tiempo" >&2
+          exit 1
+
+      - name: Logs del contenedor
+        if: always()
+        run: docker compose logs
+
+      - name: docker compose down
+        if: always()
+        run: docker compose down
