@@ -1,0 +1,96 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Pruebas unitarias
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar pruebas
+        run: npm test
+
+  build-and-push:
+    name: Construir y publicar imagen Docker
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadatos de la imagen
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build y push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # deploy:
+  #   name: Desplegar en Kubernetes
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     # TODO: falta definir antes de habilitar este job:
+  #     #   1. Manifiestos de Kubernetes (deployment.yaml / service.yaml) o un chart de Helm en el repo.
+  #     #   2. Cómo autenticar contra el cluster: por ejemplo un secret KUBE_CONFIG
+  #     #      con el kubeconfig en base64, o las credenciales del proveedor cloud
+  #     #      (EKS/GKE/AKS) para obtener el contexto del cluster.
+  #
+  #     - name: Configurar kubeconfig
+  #       run: |
+  #         mkdir -p ~/.kube
+  #         echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+  #
+  #     - name: Actualizar imagen del deployment
+  #       run: |
+  #         kubectl set image deployment/cicdtest \
+  #           cicdtest=${{ needs.build-and-push.outputs.image }} \
+  #           --record
+  #         kubectl rollout status deployment/cicdtest

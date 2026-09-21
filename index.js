@@ -1,6 +1,10 @@
 const http = require('http');
 const { URL } = require('url');
 
+function multiply(a, b) {
+	return a * b;
+}
+
 const server = http.createServer((req, res) => {
 	const url = new URL(req.url, `http://${req.headers.host}`);
 
@@ -15,13 +19,17 @@ const server = http.createServer((req, res) => {
 			return res.end(JSON.stringify({ error: 'Usa /m?a=2&b=3' }));
 		}
 
-		return res.end(JSON.stringify({ resultado: a * b }));
+		return res.end(JSON.stringify({ resultado: multiply(a, b) }));
 	}
 
 	res.statusCode = 404;
 	res.end(JSON.stringify({ error: 'Ruta no encontrada' }));
 });
 
-server.listen(3000, () => {
-	console.log('Servidor ejecutándose en http://localhost:3000');
-});
+if (require.main === module) {
+	server.listen(3000, () => {
+		console.log('Servidor ejecutándose en http://localhost:3000');
+	});
+}
+
+module.exports = { multiply, server };
